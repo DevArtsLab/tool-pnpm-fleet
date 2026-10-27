@@ -1,7 +1,7 @@
 # Agent notes
 
-Agent skill for this tool: [devartslab-pnpm-fleet](../../../.agents/skills/devartslab-pnpm-fleet/SKILL.md)
-(relative path; do not copy the skill into this repo).
+Agent skill for this tool: `devartslab-pnpm-fleet` (invoke by name; installed
+at `~/.agents/skills/devartslab-pnpm-fleet/`). Do not copy it into this repo.
 
 ## Conventions
 
