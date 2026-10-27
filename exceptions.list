@@ -1,0 +1,2 @@
+# One repo dir name per line. First field exempts the repo from `pnpm-fleet check`.
+# Format: <repo-dir-name>   <reason>

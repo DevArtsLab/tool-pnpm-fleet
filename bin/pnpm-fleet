@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# pnpm-fleet - fleet-wide pnpm governance for DevArts Lab
+# Enforces: one pinned toolchain version, per-repo single-version deps, audit gates.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CONF="$ROOT/fleet.conf"
+EXC="$ROOT/exceptions.list"
+NPMRC="$ROOT/policy/npmrc"
+
+die() { echo "pnpm-fleet: $*" >&2; exit 1; }
+
+pin_ver() { sed -n 's/^PINNED_PNPM=//p' "$CONF" | head -1; }
+
+is_excepted() {
+  [ -f "$EXC" ] && awk -v n="$1" '$1==n{f=1} END{exit !f}' "$EXC"
+}
+
+repos() { # dirs containing package.json under $1 (depth 3, skip node_modules)
+  find "${1:-.}" -maxdepth 3 -name package.json -not -path "*/node_modules/*" 2>/dev/null \
+    | sed 's|/package.json$||' | sort
+}
+
+pm_field() { # packageManager value of a package.json, empty if absent
+  node -e 'try{console.log(require(process.argv[1]).packageManager||"")}catch(e){console.log("")}' "$1"
+}
+
+set_pm() { # write packageManager into package.json (2-space)
+  PINNED="$2" node -e '
+    const fs=require("fs"),p=process.argv[1];
+    const j=JSON.parse(fs.readFileSync(p,"utf8"));
+    j.packageManager="pnpm@"+process.env.PINNED;
+    fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n");
+  ' "$1"
+}
+
+usage() { cat <<'EOF'
+pnpm-fleet - fleet-wide pnpm governance
+
+  pnpm-fleet check [DIR]   audit every repo under DIR (default: parent dir)
+  pnpm-fleet apply REPO    adopt policy in one repo (.npmrc + packageManager pin)
+  pnpm-fleet pin VERSION   re-pin the fleet to a new pnpm release
+  pnpm-fleet audit [DIR]   pnpm audit --audit-level=high across the fleet
+  pnpm-fleet dupes REPO    fail if REPO resolves duplicate dep versions
+
+exceptions.list: one repo dir name per line, first field exempts the repo.
+EOF
+}
+
+cmd_check() {
+  local dir="${1:-$ROOT/..}" fails=0
+  printf '%-8s %-40s %s\n' STATUS REPO DETAIL
+  while IFS= read -r repo; do
+    local name rel pm detail="" status=FAIL
+    name="$(basename "$repo")"; rel="${repo#$dir/}"
+    pm="$(pm_field "$repo/package.json")"
+    if is_excepted "$name" || is_excepted "$rel"; then status=SKIP; detail="exception registered"
+    elif [ "$pm" != "pnpm@$(pin_ver)" ]; then
+      detail="packageManager='${pm:-none}' (want pnpm@$(pin_ver))"
+    elif [ -f "$repo/package-lock.json" ] || [ -f "$repo/yarn.lock" ]; then
+      detail="foreign lockfile present"
+    elif [ ! -f "$repo/.npmrc" ]; then status=WARN; detail="no .npmrc"
+    elif [ ! -f "$repo/pnpm-lock.yaml" ]; then status=WARN; detail="no pnpm-lock.yaml"
+    else status=OK; detail="compliant"; fi
+    [ "$status" = FAIL ] && fails=$((fails+1))
+    printf '%-8s %-40s %s\n' "$status" "$rel" "$detail"
+  done < <(repos "$dir")
+  echo "---"; [ "$fails" -eq 0 ] && echo "fleet compliant" || { echo "$fails repo(s) out of policy"; exit 1; }
+}
+
+cmd_apply() {
+  local repo="${1:?usage: pnpm-fleet apply REPO}" pkg="$1/package.json"
+  [ -f "$pkg" ] || die "no package.json in $repo"
+  cp "$NPMRC" "$repo/.npmrc" && echo "wrote $repo/.npmrc"
+  set_pm "$pkg" "$(pin_ver)" && echo "pinned packageManager=pnpm@$(pin_ver)"
+  if [ -f "$repo/package-lock.json" ] && [ ! -f "$repo/pnpm-lock.yaml" ]; then
+    echo "next: cd $repo && pnpm import && rm package-lock.json && rm -rf node_modules && pnpm install"
+  elif [ ! -f "$repo/pnpm-lock.yaml" ]; then
+    echo "next: cd $repo && pnpm install"
+  fi
+}
+
+cmd_pin() {
+  local new="${1:?usage: pnpm-fleet pin VERSION}"
+  sed -i '' "s/^PINNED_PNPM=.*/PINNED_PNPM=$new/" "$CONF"
+  echo "fleet pin -> $new"
+  while IFS= read -r repo; do
+    case "$(pm_field "$repo/package.json")" in
+      pnpm*) set_pm "$repo/package.json" "$new" && echo "updated $repo" ;;
+    esac
+  done < <(repos "${2:-$ROOT/..}")
+  echo "run 'pnpm install' in each repo to regenerate lockfiles"
+}
+
+cmd_audit() {
+  local dir="${1:-$ROOT/..}" rc=0
+  while IFS= read -r repo; do
+    [ -f "$repo/pnpm-lock.yaml" ] || continue
+    echo "== $repo"
+    pnpm -C "$repo" audit --audit-level=high || rc=1
+  done < <(repos "$dir")
+  return $rc
+}
+
+cmd_dupes() {
+  local repo="${1:?usage: pnpm-fleet dupes REPO}"
+  [ -f "$repo/pnpm-lock.yaml" ] || die "no pnpm-lock.yaml in $repo"
+  pnpm -C "$repo" dedupe --check
+}
+
+case "${1:-}" in
+  check)  shift; cmd_check "$@" ;;
+  apply)  shift; cmd_apply "$@" ;;
+  pin)    shift; cmd_pin "$@" ;;
+  audit)  shift; cmd_audit "$@" ;;
+  dupes)  shift; cmd_dupes "$@" ;;
+  *)      usage ;;
+esac

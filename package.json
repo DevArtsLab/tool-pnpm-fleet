@@ -1,0 +1,27 @@
+{
+  "name": "@devartslab/tool-pnpm-fleet",
+  "version": "0.1.0",
+  "description": "Fleet-wide pnpm governance: one pinned toolchain, per-repo dedupe, audit gates, exception registry",
+  "license": "MIT",
+  "repository": "DevArtsLab/tool-pnpm-fleet",
+  "bin": {
+    "pnpm-fleet": "bin/pnpm-fleet"
+  },
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin",
+    "policy",
+    "ci",
+    "fleet.conf",
+    "exceptions.list"
+  ],
+  "keywords": [
+    "pnpm",
+    "governance",
+    "monorepo",
+    "dependency-management"
+  ]
+}
