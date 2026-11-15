@@ -7,7 +7,7 @@
   "bin": {
     "pnpm-fleet": "bin/pnpm-fleet"
   },
-  "packageManager": "pnpm@12.15.0",
+  "packageManager": "pnpm@12.18.0",
   "engines": {
     "node": ">=18"
   },

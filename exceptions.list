@@ -1,2 +1,4 @@
 # One repo dir name per line. First field exempts the repo from `pnpm-fleet check`.
 # Format: <repo-dir-name>   <reason>
+platforms           pnpm 10 -> 12 major bump pending green build verification
+platforms/.next     Next.js build output directory, not a repo
